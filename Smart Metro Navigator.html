@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart Metro Navigator</title>
+<style>
+:root{--bg:#fff;--fg:#1a1a1a;--card:#f4f4f4;--bd:#ccc;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161616;--fg:#eee;--card:#242424;--bd:#444;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161616;--fg:#eee;--card:#242424;--bd:#444;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;max-width:560px;margin:2rem auto;padding:0 1rem}
+input,select,button{width:100%;padding:.6rem;margin:.3rem 0;font-size:1rem;box-sizing:border-box;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:6px}
+button{cursor:pointer;font-weight:600}.seg{border-left:6px solid #888;padding:.4rem .8rem;margin:.6rem 0;background:var(--card)}.Blue{border-color:#1e88e5}.Green{border-color:#43a047}
+</style></head><body>
+<h2>🚇 Smart Metro Navigator</h2>
+<input id="src" list="dl" placeholder="From station"><input id="dst" list="dl" placeholder="To station"><datalist id="dl"></datalist>
+<select id="mode"><option value="fastest">Fastest (Dijkstra)</option><option value="stops">Fewest stops (BFS)</option></select>
+<button onclick="go()">Find route</button><div id="out"></div>
+<p style="font-size:.8rem;opacity:.7">Sample data, simplified Chennai Metro. Uniform 2 min per hop, 5 min per transfer.</p>
+<script>
+const LINES={Blue:["Wimco Nagar Depot","Wimco Nagar","Thiruvottriyur","Thiruvottriyur Theradi","Kaladipet","Tollgate","New Washermanpet","Tondiarpet","Thiagaraya College","Washermanpet","Mannadi","High Court","Chennai Central","Government Estate","LIC","Thousand Lights","AG-DMS","Teynampet","Nandanam","Saidapet","Little Mount","Guindy","Arignar Anna Alandur","OTA-Nanganallur Road","Meenambakkam","Chennai International Airport"],
+Green:["Chennai Central","Egmore","Nehru Park","Kilpauk","Pachaiyappa's College","Shenoy Nagar","Anna Nagar East","Anna Nagar Tower","Thirumangalam","Koyambedu","CMBT","Arumbakkam","Vadapalani","Ashok Nagar","Ekkattuthangal","Arignar Anna Alandur","St. Thomas Mount"]};
+const HOP=2,TR=5,adj=new Map(),simple=new Map(),sl=new Map(),K=(s,l)=>s+"|"+l;
+const add=(m,k,v)=>{if(!m.has(k))m.set(k,[]);m.get(k).push(v)};
+for(const[l,ss]of Object.entries(LINES)){
+ for(let i=0;i<ss.length;i++){if(!sl.has(ss[i]))sl.set(ss[i],new Set());sl.get(ss[i]).add(l)}
+ for(let i=0;i<ss.length-1;i++){const a=ss[i],b=ss[i+1];
+  add(adj,K(a,l),[K(b,l),HOP]);add(adj,K(b,l),[K(a,l),HOP]);add(simple,a,b);add(simple,b,a)}}
+for(const[s,ls]of sl)for(const a of ls)for(const b of ls)if(a!==b)add(adj,K(s,a),[K(s,b),TR]);
+// Trie
+const trie={};for(const s of sl.keys()){let n=trie;for(const c of s.toLowerCase())n=n[c]??={};n.$=s}
+function suggest(p){let n=trie;for(const c of p.toLowerCase()){if(!n[c])return[];n=n[c]}
+ const out=[],st=[n];while(st.length&&out.length<8){const x=st.pop();for(const k in x)k==="$"?out.push(x[k]):st.push(x[k])}return out.sort()}
+// Min-heap
+class Heap{constructor(){this.a=[]}push(x){const a=this.a;a.push(x);let i=a.length-1;while(i>0){const p=(i-1)>>1;if(a[p][0]<=a[i][0])break;[a[p],a[i]]=[a[i],a[p]];i=p}}
+ pop(){const a=this.a,t=a[0],l=a.pop();if(a.length){a[0]=l;let i=0;for(;;){let m=i,L=2*i+1,R=L+1;if(L<a.length&&a[L][0]<a[m][0])m=L;if(R<a.length&&a[R][0]<a[m][0])m=R;if(m===i)break;[a[m],a[i]]=[a[i],a[m]];i=m}}return t}
+ get size(){return this.a.length}}
+function fastest(src,dst){const h=new Heap(),dist=new Map(),prev=new Map();
+ for(const l of sl.get(src)){h.push([0,K(src,l)]);dist.set(K(src,l),0)}
+ while(h.size){const[d,u]=h.pop();if(d>(dist.get(u)??Infinity))continue;
+  if(u.split("|")[0]===dst){const p=[u];while(prev.has(p[p.length-1]))p.push(prev.get(p[p.length-1]));return[d,p.reverse()]}
+  for(const[v,w]of adj.get(u)||[]){const nd=d+w;if(nd<(dist.get(v)??Infinity)){dist.set(v,nd);prev.set(v,u);h.push([nd,v])}}}return null}
+function bfs(src,dst){const q=[src],prev=new Map([[src,null]]);
+ for(let i=0;i<q.length;i++){let u=q[i];if(u===dst){const p=[];while(u!==null){p.push(u);u=prev.get(u)}return p.reverse()}
+  for(const v of simple.get(u)||[])if(!prev.has(v)){prev.set(v,u);q.push(v)}}return null}
+function go(){const s=src.value,d=dst.value,o=document.getElementById("out");
+ if(!sl.has(s)||!sl.has(d)){o.textContent="Pick valid stations from the suggestions.";return}
+ if(s===d){o.textContent="Source and destination are the same.";return}
+ if(mode.value==="stops"){const p=bfs(s,d);o.innerHTML=`<p><b>${p.length-1} stops</b></p><div class="seg">${p.join(" → ")}</div>`;return}
+ const[c,st]=fastest(s,d),segs=[];
+ for(const x of st){const[n,l]=x.split("|"),last=segs[segs.length-1];
+  if(last&&last.l===l){if(last.s[last.s.length-1]!==n)last.s.push(n)}else segs.push({l,s:[n]})}
+ const rides=segs.filter(g=>g.s.length>1);
+ o.innerHTML=`<p><b>${c} min</b> · ${rides.reduce((a,g)=>a+g.s.length-1,0)} stops · ${Math.max(rides.length-1,0)} transfer(s)</p>`+rides.map(g=>`<div class="seg ${g.l}"><b>${g.l} line</b><br>${g.s.join(" → ")}</div>`).join("")}
+for(const id of["src","dst"])document.getElementById(id).addEventListener("input",e=>{dl.innerHTML=suggest(e.target.value).map(s=>`<option value="${s}">`).join("")});
+</script></body></html>

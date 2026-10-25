@@ -1,0 +1,130 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart Metro Navigator</title>
+<style>
+:root{--bg:#f3f6fb;--fg:#14202e;--card:#fff;--mut:#5b6b7c;--bd:#d9e1ea;--ac:#2563eb;--map:#eaf0f8;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e141b;--fg:#e8eef5;--card:#17202b;--mut:#93a4b6;--bd:#2a3746;--map:#101923;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e141b;--fg:#e8eef5;--card:#17202b;--mut:#93a4b6;--bd:#2a3746;--map:#101923;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:linear-gradient(120deg,#1e88e5,#2e9b4f);color:#fff;padding:1.6rem 1rem;text-align:center}
+header h1{margin:0;font-size:1.7rem}header p{margin:.3rem 0 0;opacity:.9;font-size:.95rem}
+.w{max-width:1000px;margin:0 auto;padding:1rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:1rem;margin-bottom:1rem;box-shadow:0 2px 10px #0000000d}
+h3{margin:.1rem 0 .7rem}.row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+input,select,button{font:inherit;padding:.65rem .8rem;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--fg)}
+.row input{flex:1;min-width:150px}button{cursor:pointer;font-weight:600}
+.go{background:var(--ac);color:#fff;border:0;padding:.7rem 1.4rem}.go:hover{filter:brightness(1.1)}
+.sw{width:44px;padding:.5rem;border-radius:50%}
+.chip{display:inline-flex;gap:.4rem;background:#ef44441f;color:#ef4444;border:1px solid #ef444455;border-radius:99px;padding:.15rem .6rem;margin:.3rem .3rem 0 0;font-size:.85rem;cursor:pointer}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.7rem}
+.tile{background:var(--bg);border-radius:12px;padding:.8rem;text-align:center;animation:pop .5s ease both}
+.tile b{display:block;font-size:1.5rem}.tile span{color:var(--mut);font-size:.8rem}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:none}}
+.step{display:flex;gap:.7rem;margin:.5rem 0;animation:pop .5s ease both}
+.badge{flex:none;width:12px;border-radius:6px}
+.step small{color:var(--mut)}
+svg{width:100%;height:auto;background:var(--map);border-radius:12px}
+.stn{cursor:pointer}.stn:hover circle{r:11}
+.ov{fill:none;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:14 10;animation:dash 1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-24}}
+.pulse{animation:pl 1.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes pl{from{opacity:.8;transform:scale(.6)}to{opacity:0;transform:scale(2.4)}}
+.lb{font-size:11px;fill:var(--fg);paint-order:stroke;stroke:var(--map);stroke-width:3px;pointer-events:none}
+table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{padding:.5rem;border-bottom:1px solid var(--bd);text-align:left}th{color:var(--mut);font-weight:600}
+tr.best td{background:#2e9b4f1f}.mut{color:var(--mut);font-size:.82rem}.err{color:#ef4444;font-weight:600}
+.leg i{display:inline-block;width:22px;height:6px;border-radius:3px;margin:0 .3rem 0 .8rem;vertical-align:middle}
+@media print{.noprint{display:none}body{background:#fff}}
+</style></head><body>
+<header><h1>🚇 Smart Metro Navigator</h1><p>Graph-based route planning using Dijkstra, BFS, Min-Heap and Trie</p></header>
+<div class="w">
+<div class="card noprint"><h3>Plan your journey</h3>
+ <div class="row"><input id="src" list="dl" placeholder="From station" autocomplete="off"><button class="sw" id="swap" title="Swap">⇅</button><input id="dst" list="dl" placeholder="To station" autocomplete="off"></div>
+ <datalist id="dl"></datalist>
+ <div class="row" style="margin-top:.6rem"><select id="mode"><option value="fast">⚡ Fastest (Dijkstra)</option><option value="stops">🛑 Fewest stops (BFS)</option><option value="tf">🔁 Least transfers (Weighted Dijkstra)</option></select>
+ <input id="cl" list="dl" placeholder="Close a station (maintenance), press Enter" autocomplete="off"></div>
+ <div id="chips"></div>
+ <div class="row" style="margin-top:.7rem"><button class="go" id="find">Find route</button><button id="prn">🖨 Print / Save PDF</button><button id="thm">🌓 Theme</button></div>
+ <div id="msg" class="err"></div></div>
+<div id="res" style="display:none">
+ <div class="card"><h3>Journey summary</h3><div class="tiles" id="tiles"></div></div>
+ <div class="card"><h3>Directions</h3><div id="steps"></div></div>
+</div>
+<div class="card"><h3>Network map <span class="mut">(click stations to set From / To)</span></h3>
+ <svg id="map" viewBox="0 0 880 520"></svg>
+ <div class="mut leg"><i style="background:#1e88e5"></i>Blue line<i style="background:#2e9b4f"></i>Green line<span style="margin-left:.8rem">◉ Interchange</span><span style="margin-left:.8rem;color:#ef4444">● Closed</span></div></div>
+<div class="card" id="cmpc" style="display:none"><h3>Algorithm comparison (same journey)</h3><div style="overflow-x:auto"><table id="cmp"></table></div></div>
+<div class="card"><h3>Data structures &amp; algorithms used</h3><div style="overflow-x:auto"><table>
+<tr><th>Feature</th><th>DSA</th><th>Complexity</th><th>Reason</th></tr>
+<tr><td>Network</td><td>Adjacency list (graph)</td><td>O(V+E) space</td><td>Metro graph is sparse</td></tr>
+<tr><td>Fastest route</td><td>Dijkstra + Min-Heap</td><td>O((V+E) log V)</td><td>Non-negative weights</td></tr>
+<tr><td>Fewest stops</td><td>BFS (Queue)</td><td>O(V+E)</td><td>Unweighted edges</td></tr>
+<tr><td>Least transfers</td><td>Dijkstra, transfer weight 1000</td><td>O((V+E) log V)</td><td>Transfers dominate cost</td></tr>
+<tr><td>Line changes</td><td>State graph (station, line)</td><td>V = stations x lines</td><td>Dijkstra can charge for switching</td></tr>
+<tr><td>Autocomplete</td><td>Trie</td><td>O(prefix length)</td><td>Independent of station count</td></tr>
+<tr><td>Closed stations</td><td>Node removal + rebuild</td><td>O(V+E)</td><td>Reroute around closures</td></tr></table></div>
+<p class="mut">Assumptions: 2 min per hop, 5 min per transfer, about 1.25 km per stop. Fare uses an estimated distance slab. Station data is a simplified sample.</p></div>
+</div>
+<script>
+const LINES={Blue:["Wimco Nagar Depot","Wimco Nagar","Thiruvottriyur","Thiruvottriyur Theradi","Kaladipet","Tollgate","New Washermanpet","Tondiarpet","Thiagaraya College","Washermanpet","Mannadi","High Court","Chennai Central","Government Estate","LIC","Thousand Lights","AG-DMS","Teynampet","Nandanam","Saidapet","Little Mount","Guindy","Arignar Anna Alandur","OTA-Nanganallur Road","Meenambakkam","Chennai International Airport"],
+Green:["Chennai Central","Egmore","Nehru Park","Kilpauk","Pachaiyappa's College","Shenoy Nagar","Anna Nagar East","Anna Nagar Tower","Thirumangalam","Koyambedu","CMBT","Arumbakkam","Vadapalani","Ashok Nagar","Ekkattuthangal","Arignar Anna Alandur","St. Thomas Mount"]};
+const COL={Blue:'#1e88e5',Green:'#2e9b4f'};
+const ANCH={Blue:[[0,60,50],[12,400,200],[22,560,420],[25,800,480]],Green:[[0,400,200],[3,280,120],[6,160,170],[9,110,300],[12,200,430],[15,560,420],[16,700,340]]};
+const pos={},sl=new Map();
+for(const l in LINES)LINES[l].forEach((s,i)=>{const A=ANCH[l];let k=0;while(k<A.length-2&&i>A[k+1][0])k++;const[a,x1,y1]=A[k],[b,x2,y2]=A[k+1],t=(i-a)/(b-a);pos[s]=[x1+(x2-x1)*t,y1+(y2-y1)*t];if(!sl.has(s))sl.set(s,new Set());sl.get(s).add(l)});
+const trie={};for(const s of sl.keys()){let n=trie;for(const c of s.toLowerCase())n=n[c]??={};n.$=s}
+function suggest(p){let n=trie;for(const c of p.toLowerCase()){if(!n[c])return[];n=n[c]}const o=[],st=[n];while(st.length&&o.length<8){const x=st.pop();for(const k in x)k==='$'?o.push(x[k]):st.push(x[k])}return o.sort()}
+class Heap{constructor(){this.a=[]}get size(){return this.a.length}
+push(x){const a=this.a;a.push(x);let i=a.length-1;while(i>0){const p=(i-1)>>1;if(a[p][0]<=a[i][0])break;[a[p],a[i]]=[a[i],a[p]];i=p}}
+pop(){const a=this.a,t=a[0],l=a.pop();if(a.length){a[0]=l;let i=0;for(;;){let m=i,L=2*i+1,R=L+1;if(L<a.length&&a[L][0]<a[m][0])m=L;if(R<a.length&&a[R][0]<a[m][0])m=R;if(m===i)break;[a[m],a[i]]=[a[i],a[m]];i=m}}return t}}
+function build(closed){const adj=new Map(),simple=new Map(),ad=(m,k,v)=>{if(!m.has(k))m.set(k,[]);m.get(k).push(v)};
+for(const l in LINES){const ss=LINES[l];for(let i=0;i<ss.length-1;i++){const a=ss[i],b=ss[i+1];if(closed.has(a)||closed.has(b))continue;ad(adj,a+'|'+l,b+'|'+l);ad(adj,b+'|'+l,a+'|'+l);ad(simple,a,b);ad(simple,b,a)}}return{adj,simple}}
+function dijkstra(src,dst,hop,tr,g){const h=new Heap(),dist=new Map(),prev=new Map();let ex=0;
+for(const l of sl.get(src)){const k=src+'|'+l;dist.set(k,0);h.push([0,k])}
+while(h.size){const[d,u]=h.pop();if(d>dist.get(u))continue;ex++;const[s,l]=u.split('|');
+if(s===dst){const p=[u];while(prev.has(p[p.length-1]))p.push(prev.get(p[p.length-1]));p.reverse();const e=[];for(let i=0;i<p.length-1;i++){const[a,la]=p[i].split('|'),[b]=p[i+1].split('|');if(a!==b)e.push([a,b,la])}return{edges:e,ex}}
+const nb=(g.adj.get(u)||[]).map(v=>[v,hop]);for(const l2 of sl.get(s))if(l2!==l)nb.push([s+'|'+l2,tr]);
+for(const[v,w]of nb){const nd=d+w;if(nd<(dist.get(v)??Infinity)){dist.set(v,nd);prev.set(v,u);h.push([nd,v])}}}return null}
+function bfs(src,dst,g){const q=[src],prev=new Map([[src,null]]);let ex=0;
+for(let i=0;i<q.length;i++){let u=q[i];ex++;if(u===dst){const p=[];while(u!==null){p.push(u);u=prev.get(u)}p.reverse();const e=[];let cur=null;
+for(let j=0;j<p.length-1;j++){const sh=[...sl.get(p[j])].filter(l=>sl.get(p[j+1]).has(l));cur=sh.includes(cur)?cur:sh[0];e.push([p[j],p[j+1],cur])}return{edges:e,ex}}
+for(const v of g.simple.get(u)||[])if(!prev.has(v)){prev.set(v,u);q.push(v)}}return null}
+function solve(mode,s,d,closed){const g=build(closed);const r=mode==='stops'?bfs(s,d,g):mode==='fast'?dijkstra(s,d,2,5,g):dijkstra(s,d,1,1000,g);if(!r)return null;
+const segs=[];for(const[a,b,l]of r.edges){const L=segs[segs.length-1];if(L&&L.line===l)L.st.push(b);else segs.push({line:l,st:[a,b]})}
+const stops=r.edges.length,tf=segs.length-1;return{segs,stops,tf,min:stops*2+tf*5,ex:r.ex}}
+const fare=n=>{const km=n*1.25;return km<=2?10:km<=5?20:km<=12?30:km<=21?40:km<=32?50:60};
+//UI
+const $=id=>document.getElementById(id),closed=new Set();let raf;
+function drawMap(){let h='';for(const l in LINES)h+=`<polyline points="${LINES[l].map(s=>pos[s].join(',')).join(' ')}" fill="none" stroke="${COL[l]}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
+h+='<g id="ov"></g>';for(const[s,[x,y]]of Object.entries(pos)){const ix=sl.get(s).size>1;h+=`<g class="stn" data-s="${s}"><circle cx="${x}" cy="${y}" r="${ix?9:5}" fill="var(--card)" stroke="${ix?'var(--fg)':'#7a8a9b'}" stroke-width="${ix?3:2}"/><title>${s}</title></g>`}
+h+='<g id="lb"></g><circle id="tr" r="7" fill="#f59e0b" stroke="#fff" stroke-width="2" style="display:none"/>';$('map').innerHTML=h;labels([])}
+function labels(route){const set=new Set(route);for(const l in LINES){const a=LINES[l];set.add(a[0]);set.add(a[a.length-1])}for(const[s,v]of sl)if(v.size>1)set.add(s);
+$('lb').innerHTML=[...set].map(s=>{const[x,y]=pos[s];return`<text class="lb" x="${x+11}" y="${y-9}">${s}</text>`}).join('');
+document.querySelectorAll('.stn circle').forEach(c=>{const s=c.parentNode.dataset.s;if(closed.has(s)){c.setAttribute('fill','#ef4444');c.setAttribute('stroke','#ef4444')}else c.setAttribute('fill','var(--card)')})}
+function animate(pts){cancelAnimationFrame(raf);const t=$('tr');t.style.display='';const L=[0];for(let i=1;i<pts.length;i++)L.push(L[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));const T=L[L.length-1],t0=performance.now();
+const f=now=>{const p=((now-t0)%5000)/5000*T;let i=1;while(i<L.length-1&&L[i]<p)i++;const k=(p-L[i-1])/(L[i]-L[i-1]||1);t.setAttribute('cx',pts[i-1][0]+(pts[i][0]-pts[i-1][0])*k);t.setAttribute('cy',pts[i-1][1]+(pts[i][1]-pts[i-1][1])*k);raf=requestAnimationFrame(f)};raf=requestAnimationFrame(f)}
+function showChips(){$('chips').innerHTML=[...closed].map(s=>`<span class="chip" data-x="${s}">⛔ ${s} ✕</span>`).join('')}
+function find(){const s=$('src').value,d=$('dst').value,m=$('mode').value;$('msg').textContent='';
+if(!sl.has(s)||!sl.has(d))return $('msg').textContent='Pick valid stations from the suggestions.';
+if(s===d)return $('msg').textContent='Source and destination are the same.';
+if(closed.has(s)||closed.has(d))return $('msg').textContent='Source or destination is closed.';
+const r=solve(m,s,d,closed);$('res').style.display=$('cmpc').style.display='';
+if(!r){$('res').style.display='none';$('cmpc').style.display='none';return $('msg').textContent='No route available (closures may disconnect the network).'}
+const arr=new Date(Date.now()+r.min*60000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+$('tiles').innerHTML=[[r.min+' min','Travel time'],[r.stops,'Stops'],[r.tf,'Transfers'],['₹'+fare(r.stops),'Est. fare'],[arr,'Arrive if you leave now']].map(([a,b],i)=>`<div class="tile" style="animation-delay:${i*80}ms"><b>${a}</b><span>${b}</span></div>`).join('');
+$('steps').innerHTML=r.segs.map((g,i)=>`<div class="step" style="animation-delay:${i*120}ms"><div class="badge" style="background:${COL[g.line]}"></div><div><b>${i?'Change to':'Board'} ${g.line} line at ${g.st[0]}</b><br><small>Ride ${g.st.length-1} stop${g.st.length>2?'s':''} towards ${g.st[g.st.length-1]}: ${g.st.slice(1,-1).join(', ')||'direct'}</small></div></div>`).join('')+`<div class="step"><div class="badge" style="background:#f59e0b"></div><div><b>Arrive at ${d}</b></div></div>`;
+const pts=[],names=[];r.segs.forEach((g,i)=>(i?g.st.slice(1):g.st).forEach(x=>names.push(x)));names.forEach(x=>pts.push(pos[x]));
+let ov='';r.segs.forEach(g=>ov+=`<polyline class="ov" stroke="${g.line==='Blue'?'#0d47a1':'#1b5e20'}" opacity=".9" points="${g.st.map(x=>pos[x].join(',')).join(' ')}"/>`);
+for(const[x,c]of[[s,'#2563eb'],[d,'#ef4444']]){const[px,py]=pos[x];ov+=`<circle class="pulse" cx="${px}" cy="${py}" r="12" fill="${c}"/><circle cx="${px}" cy="${py}" r="7" fill="${c}" stroke="#fff" stroke-width="2"/>`}
+$('ov').innerHTML=ov;labels(names.length<=14?names:[s,d,...r.segs.map(g=>g.st[0])]);animate(pts);
+const rows=[['fast','Dijkstra + Heap'],['stops','BFS'],['tf','Weighted Dijkstra']].map(([k,n])=>({k,n,r:solve(k,s,d,closed)}));const best=Math.min(...rows.map(x=>x.r.min));
+$('cmp').innerHTML='<tr><th>Algorithm</th><th>Time</th><th>Stops</th><th>Transfers</th><th>Nodes explored</th></tr>'+rows.map(x=>`<tr class="${x.r.min===best?'best':''}"><td>${x.n}${x.k===m?' ✔':''}</td><td>${x.r.min} min</td><td>${x.r.stops}</td><td>${x.r.tf}</td><td>${x.r.ex}</td></tr>`).join('');
+$('res').scrollIntoView({behavior:'smooth'})}
+$('find').onclick=find;
+$('swap').onclick=()=>{[$('src').value,$('dst').value]=[$('dst').value,$('src').value]};
+$('prn').onclick=()=>window.print();
+$('thm').onclick=()=>{const r=document.documentElement,d=getComputedStyle(r).getPropertyValue('--bg').trim()==='#0e141b';r.dataset.theme=d?'light':'dark'};
+$('cl').addEventListener('keydown',e=>{if(e.key==='Enter'&&sl.has(e.target.value)){closed.add(e.target.value);e.target.value='';showChips();labels([])}});
+$('chips').onclick=e=>{const x=e.target.closest('.chip');if(x){closed.delete(x.dataset.x);showChips();labels([])}};
+$('map').onclick=e=>{const g=e.target.closest('.stn');if(!g)return;const s=g.dataset.s;if(!$('src').value||$('dst').value)$('src').value=s,$('dst').value='';else $('dst').value=s};
+for(const id of['src','dst','cl'])$(id).addEventListener('input',e=>{$('dl').innerHTML=suggest(e.target.value).map(s=>`<option value="${s}">`).join('')});
+try{drawMap()}catch(e){}
+</script></body></html>
